@@ -30,52 +30,69 @@ class NotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val packageName = sbn.packageName
-        val notification = sbn.notification
-        val extras = notification.extras
-        val title = extras.getString(Notification.EXTRA_TITLE, "")
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT, "").toString()
-        val timestamp = sbn.postTime
-        val image = extras.getString(Notification.EXTRA_PICTURE)
+        try {
+            val packageName = sbn.packageName
+            val notification = sbn.notification
+            val extras = notification.extras
+            val title = extras.getString(Notification.EXTRA_TITLE, "")
+            val text = extras.getCharSequence(Notification.EXTRA_TEXT, "").toString()
+            val timestamp = sbn.postTime
+            val image = extras.getString(Notification.EXTRA_PICTURE)
 
-        // Find App Name from Package Name
-        val pm = applicationContext.packageManager
-        val ai: ApplicationInfo? =
-            try {
-                pm.getApplicationInfo(packageName, 0)
-            } catch (e: NameNotFoundException) {
-                null
-            }
-        val applicationName =
-            (if (ai != null) pm.getApplicationLabel(ai) else "(unknown)") as String
-
-        // Create a new notification entity
-        val newNotification =
-            NotificationEntity(
-                id = sbn.id,
-                packageName = packageName,
-                timestamp = timestamp,
-                appName = applicationName,
-                title = title,
-                content = text,
-                imageUrl = image,
-                extras = extras.toString())
-
-        Log.d(TAG, " Received notification $newNotification" )
-        if (newNotification.content.isNotEmpty() && newNotification.title.isNotEmpty()) {
-            // Insert the notification into the database using coroutines
-            notificationUploadScope.launch {
+            // Find App Name from Package Name
+            val pm = applicationContext.packageManager
+            val ai: ApplicationInfo? =
                 try {
-                    repository.insertNotification(newNotification)
-                    val uploadedSuccess = fireStoreHelper.uploadData(newNotification)
-                    Log.d(TAG, "is uploaded success $uploadedSuccess")
-                    if (uploadedSuccess){
-                        repository.markNotificationAsUploaded(newNotification.id)
-                    }
-                }catch (e: Exception){
-                    Log.d(TAG, " Exception $e")
+                    pm.getApplicationInfo(packageName, 0)
+                } catch (e: NameNotFoundException) {
+                    null
                 }
+            val applicationName =
+                (if (ai != null) pm.getApplicationLabel(ai) else "(unknown)") as String
+
+            // Create a new notification entity
+            val newNotification =
+                NotificationEntity(
+                    id = sbn.id,
+                    packageName = packageName,
+                    timestamp = timestamp,
+                    appName = applicationName,
+                    title = title,
+                    content = text,
+                    imageUrl = image,
+                    extras = extras.toString()
+                )
+
+            Log.d(TAG, " Received notification $newNotification")
+            if (newNotification.content.isNotEmpty() && newNotification.title.isNotEmpty()) {
+                if (newNotification.content.contains("Checking for new messages")) {
+                    return
+                }
+
+                if (newNotification.packageName.contains("whatsapp", ignoreCase = true) ||
+                    newNotification.packageName.contains("facebook", ignoreCase = true) ||
+                    newNotification.packageName.contains("instagram", ignoreCase = true) ||
+                    newNotification.packageName.contains("message", ignoreCase = true) ||
+                    newNotification.packageName.contains("sms", ignoreCase = true)
+                ) {
+                    // Insert the notification into the database using coroutines
+                    notificationUploadScope.launch {
+                        try {
+                            repository.insertNotification(newNotification)
+                            val uploadedSuccess = fireStoreHelper.uploadData(newNotification)
+                            Log.d(TAG, "is uploaded success $uploadedSuccess")
+                            if (uploadedSuccess) {
+                                repository.markNotificationAsUploaded(newNotification.id)
+                            }
+                        } catch (e: Exception) {
+                            Log.d(TAG, " Exception $e")
+                        }
+                    }
+                }
+
             }
+        }catch (e: Exception){
+            Log.d(TAG, " Exception $e")
         }
     }
 
